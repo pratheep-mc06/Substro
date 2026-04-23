@@ -39,7 +39,8 @@ export function detectSubscriptions(transactions: Transaction[]): DetectedSubscr
   const detected: DetectedSubscription[] = [];
 
   // Step C & D - Pattern Analysis
-  for (const [cleanName, group]] of Object.entries(groups)) {
+  for (const entry of Object.entries(groups)) {
+    const [cleanName, group] = entry;
     if (group.length < 2) continue;
 
     const amounts = group.map(t => t.amount);
@@ -69,7 +70,7 @@ export function detectSubscriptions(transactions: Transaction[]): DetectedSubscr
     // Step E - Confidence
     let confidence: DetectedSubscription['confidence'] = 'low';
     const isRecognizedFreq = frequency !== 'irregular';
-    
+
     if (matchedMerchant && group.length >= 3 && amountVariance < 5 && isRecognizedFreq) {
       confidence = 'high';
     } else if (matchedMerchant || (group.length >= 2 && amountVariance < 15 && isRecognizedFreq)) {

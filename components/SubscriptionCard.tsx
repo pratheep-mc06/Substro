@@ -1,19 +1,22 @@
-import { useState } from 'react';
 import type { DetectedSubscription } from '@/types';
-import { ExternalLink, Check, X } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 import clsx from 'clsx';
 import confetti from 'canvas-confetti';
+import { useCurrency } from '@/hooks/useCurrency';
 
 interface SubscriptionCardProps {
   subscription: DetectedSubscription;
   onCancel: (id: string) => void;
   onDismiss: (id: string) => void;
+  onInvestigate: (sub: DetectedSubscription) => void;
   isCancelled?: boolean;
 }
 
-export default function SubscriptionCard({ subscription, onCancel, onDismiss, isCancelled }: SubscriptionCardProps) {
+export default function SubscriptionCard({ subscription, onCancel, onDismiss, onInvestigate, isCancelled }: SubscriptionCardProps) {
+  const { format: formatCurrency } = useCurrency();
   const { matchedMerchant, cleanName, category, confidence, monthlyEstimate, annualEstimate, firstSeen, lastSeen } = subscription;
+
   
   const handleCancelClick = () => {
     // Basic Confetti
@@ -79,11 +82,11 @@ export default function SubscriptionCard({ subscription, onCancel, onDismiss, is
       {/* Middle section */}
       <div className="py-4 border-t border-b border-border/60 mb-4 flex-grow flex flex-col justify-center">
         <div className="flex items-baseline gap-1">
-          <span className="text-xl font-bold text-text-primary">${monthlyEstimate.toFixed(2)}</span>
+          <span className="text-xl font-bold text-text-primary">{formatCurrency(monthlyEstimate)}</span>
           <span className="text-sm font-medium text-text-secondary">/mo</span>
         </div>
         <div className="text-xs text-text-secondary mt-1">
-          ${annualEstimate.toFixed(2)}/yr
+          {formatCurrency(annualEstimate)}/yr
         </div>
         <div className="text-[11px] text-text-tertiary mt-2">
           Last charged {lastSeen}
@@ -110,24 +113,21 @@ export default function SubscriptionCard({ subscription, onCancel, onDismiss, is
               Mark Cancelled
             </button>
           </>
-        ) : confidence === 'medium' ? (
+        ) : (
           <>
-            <button className="flex-1 flex items-center justify-center gap-1 border border-accent text-accent hover:bg-accent-light text-sm font-medium py-2 px-3 rounded transition-colors">
+            <button 
+              onClick={() => onInvestigate(subscription)}
+              className="flex-1 flex items-center justify-center gap-1 border border-accent text-accent hover:bg-accent-light text-sm font-medium py-2 px-3 rounded transition-colors"
+            >
               Investigate &rarr;
             </button>
             <button onClick={() => onDismiss(subscription.id)} className="text-sm font-medium text-text-secondary hover:text-text-primary py-2 px-3">
               Dismiss
             </button>
           </>
-        ) : (
-          <>
-             <span className="text-xs font-medium text-warning flex-1">Possible recurring</span>
-             <button onClick={() => onDismiss(subscription.id)} className="text-sm font-medium text-text-secondary hover:text-text-primary py-2 px-3">
-              Dismiss
-            </button>
-          </>
         )}
       </div>
+
     </motion.div>
   );
 }

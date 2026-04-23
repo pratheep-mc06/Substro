@@ -1,6 +1,9 @@
 import Papa from 'papaparse';
 import type { Transaction } from '@/types';
 
+// pdfjs is imported dynamically in parsePDF to avoid SSR errors
+// as it depends on browser-only globals like DOMMatrix
+
 export async function parseFile(file: File): Promise<Transaction[]> {
   if (file.type === 'application/pdf') {
     return parsePDF(file);
@@ -26,14 +29,12 @@ async function parseCSV(file: File): Promise<Transaction[]> {
         let amountKey = headers.find(h => ['amount', 'debit', 'credit', 'withdrawal', 'dr'].includes(h));
 
         if (!dateKey || !descKey || !amountKey) {
-            // fallback generic search if exact match fails
             dateKey = dateKey || headers.find(h => h.includes('date'));
             descKey = descKey || headers.find(h => h.includes('desc') || h.includes('name'));
             amountKey = amountKey || headers.find(h => h.includes('amount') || h.includes('debit'));
         }
 
         if (!dateKey || !descKey || !amountKey) {
-            console.warn("Could not automatically determine columns. Using defaults.");
             dateKey = Object.keys(data[0])[0];
             descKey = Object.keys(data[0])[1];
             amountKey = Object.keys(data[0])[2];
@@ -51,10 +52,9 @@ async function parseCSV(file: File): Promise<Transaction[]> {
           const amountMatch = rawAmount.match(/[\d.]+/);
           if (!amountMatch) continue;
           
-          let amount = parseFloat(amountMatch[0]);
+          const amount = parseFloat(amountMatch[0]);
           if (isNaN(amount) || amount <= 0) continue;
 
-          // Simple date normalization
           let dateStr = rawDate;
           try {
              const d = new Date(rawDate);
@@ -80,44 +80,58 @@ async function parseCSV(file: File): Promise<Transaction[]> {
 }
 
 async function parsePDF(file: File): Promise<Transaction[]> {
-  // Use dynamic import for pdf-parse, but pdf-parse is typically Node.js only.
-  // In a browser, we'd use pdf.js. Given constraints, assuming the user might use a server action
-  // or a compatible browser version of pdf-parse if specified.
-  // The user prompt specifically asked to "Dynamic import pdf-parse only when file.type === 'application/pdf'."
-  // We will try our best.
   try {
-    const pdfParse = (await import('pdf-parse')).default;
-    const arrayBuffer = await file.arrayBuffer();
-    const data = await pdfParse(Buffer.from(arrayBuffer));
+    // Dynamic import to avoid SSR issues with DOMMatrix
+    const pdfjs = await import('pdfjs-dist');
     
-    const lines = data.text.split('\n');
+    // Set up PDF.js worker using a CDN for simplicity in static deployments
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+    
+    // Extract text from all pages
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ');
+      fullText += pageText + '\n';
+    }
+
+    const lines = fullText.split('\n');
     const transactions: Transaction[] = [];
     
-    // basic regex for MM/DD/YYYY DESC AMOUNT
-    const rowRegex = /^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(.+?)\s+([\d.,]+)$/;
+    // Regex for: MM/DD/YYYY Description Amount
+    // Matches common formats like "04/15/2024 NETFLIX 15.99"
+    const rowRegex = /(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(.+?)\s+([\d.,]+)/g;
 
-    for (const line of lines) {
-       const match = line.trim().match(rowRegex);
-       if (match) {
-          let dateStr = match[1];
-          try {
-             const d = new Date(dateStr);
-             if (!isNaN(d.getTime())) {
-                dateStr = d.toISOString().split('T')[0];
-             }
-          } catch(e) {}
+    let match;
+    while ((match = rowRegex.exec(fullText)) !== null) {
+      let dateStr = match[1];
+      try {
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+          dateStr = d.toISOString().split('T')[0];
+        }
+      } catch (e) {}
 
-          let amount = parseFloat(match[3].replace(/[^\d.]/g, ''));
-          if (isNaN(amount) || amount <= 0) continue;
+      const amountStr = match[3].replace(/,/g, '');
+      const amount = parseFloat(amountStr);
 
-          transactions.push({
-             date: dateStr,
-             description: match[2].trim(),
-             amount,
-             raw: line
-          });
-       }
+      if (!isNaN(amount) && amount > 0) {
+        transactions.push({
+          date: dateStr,
+          description: match[2].trim(),
+          amount: amount,
+          raw: match[0]
+        });
+      }
     }
+    
     return transactions;
   } catch (error) {
     console.error("PDF Parsing error:", error);

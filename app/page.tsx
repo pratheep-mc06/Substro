@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, FileType, Zap } from 'lucide-react';
@@ -8,15 +8,30 @@ import DropZone from '@/components/DropZone';
 import ProcessingTerminal from '@/components/ProcessingTerminal';
 import { parseFile } from '@/lib/parser';
 import { detectSubscriptions } from '@/lib/detector';
+import { useAuth } from '@/hooks/useAuth';
+import AuthModal from '@/components/AuthModal';
 
 export default function Home() {
   const router = useRouter();
+  const { user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [terminalLines, setTerminalLines] = useState<string[]>([]);
   const [showResultsBtn, setShowResultsBtn] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [summary, setSummary] = useState({ count: 0, amount: 0 });
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
+
+
+  useEffect(() => {
+    if (user && isAuthModalOpen) {
+      setIsAuthModalOpen(false);
+      setShowResultsBtn(true);
+    }
+  }, [user, isAuthModalOpen]);
+
 
   const handleFileDrop = async (file: File) => {
+    setCurrentFile(file);
     setIsProcessing(true);
     setTerminalLines(['Parsing transactions...']);
     
@@ -64,13 +79,25 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-surface text-text-primary">
       {/* Navigation */}
       <nav className="h-14 border-b border-border flex items-center justify-between px-6 bg-surface z-10 sticky top-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
           <div className="w-5 h-5 bg-accent rounded-sm" />
           <span className="font-semibold text-lg tracking-tight">Substro</span>
         </div>
-        <button className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors">
-          Sign in
-        </button>
+        {user ? (
+          <button 
+            onClick={() => router.push('/dashboard')}
+            className="text-sm font-medium text-accent hover:text-accent-hover transition-colors"
+          >
+            Dashboard
+          </button>
+        ) : (
+          <button 
+            onClick={() => router.push('/dashboard')}
+            className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
+          >
+            Sign in
+          </button>
+        )}
       </nav>
 
       <main className="flex-grow flex flex-col items-center pt-20 px-6">
@@ -82,6 +109,12 @@ export default function Home() {
           <p className="text-[18px] text-slate-500 mb-8">
             Upload your bank statement. Substro finds recurring charges automatically — no account linking required.
           </p>
+
+          <div className="mb-10 flex flex-col items-center gap-3">
+             <div className="text-sm font-medium text-text-tertiary">
+               Already have an account? <button onClick={() => router.push('/dashboard')} className="text-accent hover:text-accent-hover font-bold underline underline-offset-4">Sign in here</button>
+             </div>
+          </div>
           
           <div className="flex flex-wrap justify-center gap-4 text-sm font-medium text-text-secondary">
             <span className="flex items-center gap-1 bg-surface-muted px-3 py-1 rounded-full border border-border">
@@ -98,16 +131,19 @@ export default function Home() {
 
         {/* Upload & Processing */}
         <div className="w-full relative z-0">
-          <DropZone onFileDrop={handleFileDrop} isProcessing={isProcessing} />
+          <DropZone onFileDrop={handleFileDrop} isProcessing={isProcessing} file={currentFile} />
           
           <AnimatePresence>
             {terminalLines.length > 0 && (
               <ProcessingTerminal 
                 lines={terminalLines} 
-                onComplete={() => setShowResultsBtn(true)} 
+                onComplete={() => {
+                  setShowResultsBtn(true);
+                }} 
               />
             )}
           </AnimatePresence>
+
 
           <AnimatePresence>
             {showResultsBtn && (
@@ -117,17 +153,26 @@ export default function Home() {
                 className="flex flex-col items-center mt-6"
               >
                 <button
-                  onClick={() => router.push('/dashboard')}
-                  className="bg-accent hover:bg-accent-hover text-white px-6 py-3 rounded-default font-semibold transition-colors shadow-sm"
+                  onClick={() => {
+                    if (!user) {
+                      setIsAuthModalOpen(true);
+                    } else {
+                      router.push('/dashboard');
+                    }
+                  }}
+                  className="bg-accent hover:bg-accent-hover text-white px-8 py-4 rounded-default font-bold transition-all shadow-lg text-lg flex items-center gap-2 group"
                 >
-                  View Results &rarr;
+                  View My Report 
+                  <motion.span animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>&rarr;</motion.span>
                 </button>
-                <p className="text-xs text-text-secondary mt-3">
-                  Save your analysis — we'll send you a magic link.
+                <p className="text-sm text-text-secondary mt-4 max-w-[320px] text-center font-medium">
+                  {user ? "Your analysis is ready!" : "Sign in securely to access your personalized analysis."}
                 </p>
               </motion.div>
             )}
           </AnimatePresence>
+
+
         </div>
 
         {/* Features */}
@@ -150,7 +195,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-border py-6 px-6 flex justify-between text-sm text-text-tertiary bg-surface">
         <span>&copy; 2025 Substro</span>
         <div className="space-x-4">
@@ -158,6 +202,14 @@ export default function Home() {
           <a href="#" className="hover:text-text-secondary">Terms</a>
         </div>
       </footer>
+
+
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+        isForced={false}
+      />
     </div>
   );
 }
+
